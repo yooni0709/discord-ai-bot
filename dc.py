@@ -169,11 +169,19 @@ class TicketControlView(discord.ui.View):
 
     @discord.ui.button(label="退出此客服單", style=discord.ButtonStyle.primary, custom_id="leave_ticket", emoji="👋")
     async def leave_ticket(self, interaction: discord.Interaction, button: discord.ui.Button):
+        # 0. 檢查是不是管理員
         if interaction.user.guild_permissions.administrator:
             await interaction.response.send_message("❌ 您是管理員，無法退出頻道 (權限最高級)。", ephemeral=True)
             return
 
-        await interaction.response.send_message("👋 您已退出，此頻道將對您隱藏。", ephemeral=True)
+        # 1. 公開回覆 (修改這裡：改成所有人可見的公告)
+        embed = discord.Embed(
+            description=f"👋 **{interaction.user.mention}** 已自行退出此客服單。",
+            color=0x99aab5 # 灰色系
+        )
+        await interaction.response.send_message(embed=embed) # 預設 ephemeral=False，所以大家看得到
+        
+        # 2. 修改權限：將該使用者的「讀取訊息」權限設為 False -> 頻道直接消失
         await interaction.channel.set_permissions(interaction.user, read_messages=False)
 
 
@@ -460,7 +468,7 @@ async def menu(ctx):
     await ctx.send("🔧 **管理員控制台**：", view=ModeSelectView())
     
 
-# === [修改] 監聽刪除訊息事件 (抓包刪留言) ===
+# === [監聽刪除訊息] (抓包刪留言) ===
 @bot.event
 async def on_message_delete(message):
     if message.author.bot or not isinstance(message.channel, discord.TextChannel): return
@@ -478,31 +486,27 @@ async def on_message_delete(message):
         if is_valid_message and message.content.strip() == config["game_last_word"]:
             last_char = config["game_last_word"][-1]
             user_name = message.author.display_name
-            # 罵人語句 (刪除版)
             await message.channel.send(
                 f"😡 **{user_name}** 太壞了，偷偷刪掉已經通過的留言，滾出去！\n"
                 f"👉 下一個字還是要接「**{last_char}**」喔！"
             )
 
-# === [新增] 監聽編輯訊息事件 (抓包偷改留言) ===
+# === [監聽編輯訊息] (抓包偷改留言) ===
 @bot.event
 async def on_message_edit(before, after):
     if before.author.bot or not isinstance(before.channel, discord.TextChannel): return
     config = get_channel_config(before.channel.id)
 
     if config["mode"] == "game":
-        # 檢查「修改前」是否為有效留言
         is_valid_message = False
         for reaction in before.reactions:
             if reaction.me and str(reaction.emoji) == "✅":
                 is_valid_message = True
                 break
         
-        # 如果被修改的留言 且 是目前的最新進度
         if is_valid_message and before.content.strip() == config["game_last_word"]:
             last_char = config["game_last_word"][-1]
             user_name = before.author.display_name
-            # 罵人語句 (偷改版)
             await before.channel.send(
                 f"👀 **{user_name}** 別以為我沒看到！想偷改已經通過的答案？不可饒恕！\n"
                 f"👉 下一個字還是要接「**{last_char}**」喔！"
@@ -512,7 +516,6 @@ async def on_message_edit(before, after):
 async def on_message(message):
     if message.author == bot.user: return
 
-    # 先處理指令
     await bot.process_commands(message)
 
     if not isinstance(message.channel, discord.TextChannel):
